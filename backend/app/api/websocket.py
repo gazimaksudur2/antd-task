@@ -35,7 +35,7 @@ async def job_stream(websocket: WebSocket, job_id: str) -> None:
         while True:
             try:
                 msg = await asyncio.wait_for(queue.get(), timeout=30.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 latest = store.get(job_id)
                 if latest is None:
                     break

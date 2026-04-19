@@ -37,7 +37,7 @@ class YoloDetector:
     avoids the cost of loading the weights more than once.
     """
 
-    _instance: "YoloDetector | None" = None
+    _instance: YoloDetector | None = None
     _instance_lock = threading.Lock()
     _instance_key: tuple[str, float, str, bool] | None = None
 
@@ -58,8 +58,6 @@ class YoloDetector:
         self._half = bool(half) and device.startswith("cuda")
 
         try:
-            import torch
-
             self._model.to(self._device)
             if self._device.startswith("cuda"):
                 log_cuda_diagnostics(self._device)
@@ -79,7 +77,7 @@ class YoloDetector:
         *,
         device: str = "auto",
         half: bool = False,
-    ) -> "YoloDetector":
+    ) -> YoloDetector:
         resolved = resolve_torch_device(device)
         key = (weights, conf_threshold, resolved, bool(half) and resolved.startswith("cuda"))
         with cls._instance_lock:

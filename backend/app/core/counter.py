@@ -61,7 +61,7 @@ class VehicleCounter:
     track_classes: dict[int, str] = field(default_factory=dict)
 
     @classmethod
-    def from_frame_size(cls, frame_height: int, line_y_ratio: float = 0.5) -> "VehicleCounter":
+    def from_frame_size(cls, frame_height: int, line_y_ratio: float = 0.5) -> VehicleCounter:
         return cls(line_y=float(frame_height) * line_y_ratio)
 
     def update(
