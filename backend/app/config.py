@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     """Centralised, type-checked runtime settings."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Prefer `.env` when present, but fall back to `.env.example` so the app
+        # can run with defaults even when users forget to create a `.env`.
+        env_file=(".env", ".env.example"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
