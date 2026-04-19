@@ -35,6 +35,10 @@ class Settings(BaseSettings):
 
     # --- CV pipeline ---
     yolo_model: str = "yolov8n.pt"
+    # auto | cpu | cuda | cuda:0 — "auto" uses GPU when torch.cuda.is_available()
+    yolo_device: str = "auto"
+    # FP16 on CUDA only; faster on RTX, tiny accuracy trade-off for some scenes
+    yolo_half: bool = False
     frame_skip: int = Field(default=2, ge=1)
     resize_max: int = Field(default=640, ge=160)
     conf_threshold: float = Field(default=0.35, ge=0.0, le=1.0)

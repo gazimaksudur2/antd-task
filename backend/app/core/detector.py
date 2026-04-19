@@ -8,6 +8,8 @@ from dataclasses import dataclass
 import numpy as np
 from loguru import logger
 
+from app.core.device import log_cuda_diagnostics, resolve_torch_device
+
 # COCO class IDs for the vehicle types we care about.
 VEHICLE_CLASSES: dict[int, str] = {
     2: "car",
@@ -37,31 +39,56 @@ class YoloDetector:
 
     _instance: "YoloDetector | None" = None
     _instance_lock = threading.Lock()
+    _instance_key: tuple[str, float, str, bool] | None = None
 
-    def __init__(self, weights: str, conf_threshold: float) -> None:
+    def __init__(
+        self,
+        weights: str,
+        conf_threshold: float,
+        device: str,
+        half: bool = False,
+    ) -> None:
         from ultralytics import YOLO  # heavy import — keep inside
 
         logger.info("Loading YOLO weights '{}'", weights)
         self._model = YOLO(weights)
         self._conf = conf_threshold
         self._infer_lock = threading.Lock()
+        self._device = device
+        self._half = bool(half) and device.startswith("cuda")
+
         try:
             import torch
 
-            self._device = "cuda" if torch.cuda.is_available() else "cpu"
-            if self._device == "cuda":
-                self._model.to(self._device)
-                logger.info("YOLO running on CUDA")
+            self._model.to(self._device)
+            if self._device.startswith("cuda"):
+                log_cuda_diagnostics(self._device)
+                logger.info("YOLO inference device: {} (half_precision={})", self._device, self._half)
             else:
-                logger.info("YOLO running on CPU")
-        except Exception:  # pragma: no cover - torch is a hard dep but defensive
+                logger.info("YOLO inference device: cpu (install PyTorch+CUDA to use your RTX GPU)")
+        except Exception as exc:  # pragma: no cover
+            logger.warning("YOLO .to({}) failed ({}); staying on default device", self._device, exc)
             self._device = "cpu"
+            self._half = False
 
     @classmethod
-    def get(cls, weights: str, conf_threshold: float) -> "YoloDetector":
+    def get(
+        cls,
+        weights: str,
+        conf_threshold: float,
+        *,
+        device: str = "auto",
+        half: bool = False,
+    ) -> "YoloDetector":
+        resolved = resolve_torch_device(device)
+        key = (weights, conf_threshold, resolved, bool(half) and resolved.startswith("cuda"))
         with cls._instance_lock:
+            if cls._instance is not None and cls._instance_key != key:
+                logger.info("YOLO config changed — reloading model")
+                cls._instance = None
             if cls._instance is None:
-                cls._instance = cls(weights=weights, conf_threshold=conf_threshold)
+                cls._instance = cls(weights, conf_threshold, resolved, key[3])
+                cls._instance_key = key
             return cls._instance
 
     def detect(self, frame_bgr: np.ndarray) -> list[Detection]:
@@ -73,6 +100,7 @@ class YoloDetector:
                 classes=list(VEHICLE_CLASSES.keys()),
                 verbose=False,
                 device=self._device,
+                half=self._half,
             )
         if not results:
             return []

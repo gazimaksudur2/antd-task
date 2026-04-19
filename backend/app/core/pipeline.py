@@ -102,7 +102,12 @@ def _process(job_id: str, store: JobStore) -> None:
             job_id, meta.width, meta.height, meta.fps, meta.frame_count, meta.duration_seconds,
         )
 
-        detector = YoloDetector.get(settings.yolo_model, settings.conf_threshold)
+        detector = YoloDetector.get(
+            settings.yolo_model,
+            settings.conf_threshold,
+            device=settings.yolo_device,
+            half=settings.yolo_half,
+        )
         tracker = VehicleTracker(
             track_buffer=settings.track_buffer,
             frame_rate=max(1, int(round(meta.fps))),

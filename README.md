@@ -22,6 +22,7 @@ A full-stack proof-of-concept that analyses drone-captured traffic footage. Uplo
 9. [Testing](#testing)
 10. [Engineering assumptions](#engineering-assumptions)
 11. [Project layout](#project-layout)
+12. [GPU (NVIDIA) & deployment](#gpu-nvidia--deployment)
 
 ---
 
@@ -79,6 +80,11 @@ Open <http://localhost:5173>. The Vite dev server proxies `/api/*` and `/api/ws/
 | Node.js | 20.x |
 | ffmpeg | optional — improves OpenCV codec support |
 | (optional) NVIDIA GPU + CUDA | dramatically faster YOLO inference |
+
+### GPU (NVIDIA) & deployment
+
+- **Using an RTX 4060 Ti (or any CUDA GPU) in development:** the pipeline uses the GPU when `YOLO_DEVICE=auto` (default) **and** PyTorch was installed **with CUDA** (`torch.cuda.is_available()` must be `True`). The stock `pip install -r requirements.txt` often installs a **CPU-only** Torch build — see **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for the exact PyTorch install command and verification one-liner. Set `YOLO_HALF=true` in `backend/.env` for faster FP16 inference on RTX.
+- **Deploying the full stack:** step-by-step options (Docker Compose, bare metal, HTTPS/WebSockets, optional GPU in Docker) are in **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
 
 ### First-run notes
 
@@ -258,6 +264,8 @@ All backend settings live in `backend/.env` (see `.env.example`):
 | `DATA_DIR` / `UPLOAD_DIR` / `REPORT_DIR` | `./data...` | On-disk storage roots |
 | `MAX_UPLOAD_BYTES` | `524288000` (500 MB) | Streaming upload cap |
 | `YOLO_MODEL` | `yolov8n.pt` | Any Ultralytics weight name |
+| `YOLO_DEVICE` | `auto` | `auto` / `cpu` / `cuda` / `cuda:0` — GPU only if PyTorch+CUDA is installed |
+| `YOLO_HALF` | `false` | `true` = FP16 on CUDA (faster on RTX) |
 | `FRAME_SKIP` | `2` | Process every Nth original frame |
 | `RESIZE_MAX` | `640` | Longest-side resize before inference |
 | `CONF_THRESHOLD` | `0.35` | Detector confidence cut-off |

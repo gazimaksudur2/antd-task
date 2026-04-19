@@ -10,6 +10,9 @@ pydantic-settings==2.5.2
 filetype==1.2.0
 
 # --- Computer vision ---
+# GPU (CUDA): after `pip install -r requirements.txt`, install a CUDA build of PyTorch
+# from https://pytorch.org/get-started/locally/ (see docs/DEPLOYMENT.md). Otherwise
+# Ultralytics falls back to CPU-only Torch wheels.
 # Python 3.13: NumPy 1.26 has no Windows wheel → pip builds from source (needs GCC ≥ 8.4).
 # ultralytics 8.3.0 declares numpy<2, which forces that backtrack. Pin NumPy 2.x and use
 # a newer ultralytics that supports it (wheels only, no local compiler).
