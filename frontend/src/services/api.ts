@@ -6,6 +6,21 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
+if (import.meta.env.PROD) {
+  const bad =
+    API_BASE.includes("localhost") ||
+    API_BASE.includes("127.0.0.1") ||
+    API_BASE.startsWith("http://127.");
+  if (bad) {
+    console.error(
+      "[Smart Drone Traffic Analyzer] Misconfiguration: VITE_API_URL points at this machine (localhost), " +
+        "but the app is running on the public web. Set VITE_API_URL in Vercel to your real API HTTPS URL " +
+        "(e.g. https://your-api.onrender.com), then redeploy. Current value:",
+      API_BASE || "(empty)",
+    );
+  }
+}
+
 function buildUrl(path: string): string {
   return `${API_BASE}${path}`;
 }
