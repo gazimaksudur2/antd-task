@@ -28,10 +28,13 @@ backend/*.pt
 backend/yolov8*.pt
 *.log
 
+# TypeScript build artifacts
+frontend/tsconfig*.tsbuildinfo
+frontend/vite.config.d.ts
+frontend/vite.config.js
+
 # Demo / scratch
 scratch/
 demo_outputs/
 
 
-AssessmentDetails.md
-primary-observation.md

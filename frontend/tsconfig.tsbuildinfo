@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/processingview.tsx","./src/components/reportdownload.tsx","./src/components/summarypanel.tsx","./src/components/toastprovider.tsx","./src/components/uploadzone.tsx","./src/hooks/usejobstream.ts","./src/hooks/useupload.ts","./src/services/api.ts","./src/types/index.ts"],"version":"5.9.3"}

@@ -1,101 +1,98 @@
 # Smart Drone Traffic Analyzer
 
-A full-stack proof-of-concept that analyses drone-captured traffic footage. Upload an MP4, watch live bounding-boxes appear as the pipeline processes the video, and download a CSV / Excel report containing per-frame detections, line-crossing events, and per-class vehicle counts.
-
-- **Frontend** — React 18 + TypeScript + Vite + Tailwind CSS
-- **Backend** — FastAPI (Python 3.11) with WebSocket streaming
-- **CV Pipeline** — Ultralytics YOLOv8n + ByteTrack (via `supervision`) + a virtual-line counter
-- **Reporting** — pandas → CSV + multi-sheet XLSX
+A full-stack proof-of-concept that analyses drone video footage frame-by-frame, identifies and tracks vehicles using **YOLOv8 + ByteTrack**, counts unique vehicles passing through the scene while robustly preventing double-counting, and exports the findings as a downloadable **CSV / Excel report** — all via a polished, real-time web UI.
 
 ---
 
 ## Table of contents
 
-1. [Quick start](#quick-start)
-2. [Local development setup](#local-development-setup)
+1. [How it works](#how-it-works)
+2. [Local setup](#local-setup)
 3. [Architecture](#architecture)
-4. [Tracking & counting methodology](#tracking--counting-methodology)
-5. [Edge-case handling](#edge-case-handling)
-6. [API reference](#api-reference)
-7. [WebSocket protocol](#websocket-protocol)
-8. [Configuration](#configuration)
-9. [Testing](#testing)
-10. [Engineering assumptions](#engineering-assumptions)
-11. [Project layout](#project-layout)
-12. [GPU (NVIDIA) & deployment](#gpu-nvidia--deployment)
+4. [CV pipeline — detection & tracking](#cv-pipeline--detection--tracking)
+5. [Counting logic — preventing double-counting](#counting-logic--preventing-double-counting)
+6. [Edge-case handling](#edge-case-handling)
+7. [Report structure](#report-structure)
+8. [Testing](#testing)
+9. [Engineering assumptions](#engineering-assumptions)
+10. [Project layout](#project-layout)
 
 ---
 
-## Quick start
+## How it works
 
-### Option A — Docker Compose (one command)
-
-Requires Docker Desktop with at least 4 GB of memory allocated.
-
-```bash
-docker compose up --build
-```
-
-- Frontend: <http://localhost:3000>
-- Backend OpenAPI docs: <http://localhost:8000/docs>
-
-The backend image pre-downloads `yolov8n.pt` during build. Uploads and reports are persisted in a named volume (`drone-data`).
-
-### Option B — Local processes
-
-In one terminal (backend):
-
-```bash
-cd backend
-python -m venv .venv
-# Windows PowerShell:
-. .venv/Scripts/Activate.ps1
-# macOS / Linux:
-# source .venv/bin/activate
-pip install -r requirements.txt
-copy .env.example .env   # or `cp` on macOS/Linux
-uvicorn app.main:app --reload --port 8000
-```
-
-In another terminal (frontend):
-
-```bash
-cd frontend
-npm install
-copy .env.example .env   # or `cp` on macOS/Linux
-npm run dev
-```
-
-Open <http://localhost:5173>. The Vite dev server proxies `/api/*` and `/api/ws/*` to <http://localhost:8000>, so no CORS configuration is necessary in development.
+| Step | What happens |
+|------|-------------|
+| **1. Upload** | User drags-and-drops an `.mp4` (or `.mov`, `.avi`, `.mkv`). The file is validated by magic-byte check before saving. |
+| **2. Processing** | FastAPI schedules the CV pipeline in a background thread executor. Progress and annotated frames stream to the browser over WebSocket in real time. |
+| **3. Visualise** | Live `<canvas>` renders every streamed frame: colour-coded bounding boxes, unique tracking IDs, vehicle class labels, and a counting-line overlay. A ring progress indicator shows percentage complete. |
+| **4. Report** | On completion the UI shows total vehicles, per-type bar chart, and processing stats. Two download buttons deliver the **CSV** and **Excel** report. |
 
 ---
 
-## Local development setup
+## Local setup
 
 ### Prerequisites
 
 | Tool | Version |
 |------|---------|
-| Python | 3.11 (works on 3.12 / 3.13 too) |
+| Python | 3.11 or 3.12 (3.13 also supported — see note below) |
 | Node.js | 20.x |
-| ffmpeg | optional — improves OpenCV codec support |
-| (optional) NVIDIA GPU + CUDA | dramatically faster YOLO inference |
+| ffmpeg | optional — broadens codec support for OpenCV |
 
-### GPU (NVIDIA) & deployment
+### Backend
 
-- **Using an RTX 4060 Ti (or any CUDA GPU) in development:** the pipeline uses the GPU when `YOLO_DEVICE=auto` (default) **and** PyTorch was installed **with CUDA** (`torch.cuda.is_available()` must be `True`). The stock `pip install -r requirements.txt` often installs a **CPU-only** Torch build — see **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for the exact PyTorch install command and verification one-liner. Set `YOLO_HALF=true` in `backend/.env` for faster FP16 inference on RTX.
-- **Deploying the full stack:** step-by-step options (Docker Compose, bare metal, HTTPS/WebSockets, optional GPU in Docker) are in **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
-- **Deploying the backend on Render:** **[docs/DEPLOY-RENDER.md](docs/DEPLOY-RENDER.md)** (Blueprint `render.yaml` + `backend/scripts/render_build.sh`).
+```bash
+cd backend
+python -m venv .venv
 
-### First-run notes
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+# macOS / Linux
+source .venv/bin/activate
 
-- The first call to `/api/upload` triggers Ultralytics to download `yolov8n.pt` (~6 MB) into the backend working directory. Subsequent runs reuse it.
-- Set `YOLO_MODEL=yolov8s.pt` in `backend/.env` to trade speed for accuracy. Any Ultralytics weight name works.
-- Drop a sample drone clip into the UI to verify everything is wired correctly.
+pip install -r requirements.txt
+copy .env.example .env     # Windows
+# cp .env.example .env    # macOS / Linux
 
-### Troubleshooting: NumPy build error on Windows + Python 3.13
+uvicorn app.main:app --reload --port 8000
+```
 
-If `pip install -r requirements.txt` fails with **“NumPy requires GCC >= 8.4”**, pip was trying to **compile NumPy 1.26** from source (no Windows wheel for Python 3.13). Older `ultralytics==8.3.0` also pulled `numpy<2`, which triggered that backtrack. This repo pins **`numpy>=2.1.0`** and **`ultralytics>=8.3.128`** so the resolver stays on **binary wheels only**. Upgrade your checkout and run `pip install -U pip` then `pip install -r requirements.txt` again.
+> **Python 3.13 + Windows note** — `pip install` pins `numpy>=2.1.0` and `ultralytics>=8.3.128` so the resolver always picks binary wheels and never tries to compile NumPy from source (which would require GCC ≥ 8.4).
+
+On first upload Ultralytics auto-downloads `yolov8n.pt` (~6 MB) into the working directory. Subsequent runs reuse it.
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+copy .env.example .env     # Windows
+# cp .env.example .env    # macOS / Linux
+npm run dev
+```
+
+Open **http://localhost:5173** — Vite proxies `/api/*` and `/api/ws/*` to the backend so no extra CORS setup is needed during development.
+
+### One-command start (Docker Compose)
+
+```bash
+docker compose up --build
+# Frontend → http://localhost:3000
+# API docs → http://localhost:8000/docs
+```
+
+### Configuration (backend `.env`)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `YOLO_MODEL` | `yolov8n.pt` | Any Ultralytics weight name (`yolov8s.pt` for better accuracy) |
+| `YOLO_DEVICE` | `auto` | `auto` / `cpu` / `cuda` / `cuda:0` |
+| `YOLO_HALF` | `false` | `true` = FP16 inference (faster on RTX-class GPUs) |
+| `FRAME_SKIP` | `2` | Process every Nth frame (1 = every frame) |
+| `CONF_THRESHOLD` | `0.35` | YOLO confidence cut-off |
+| `TRACK_BUFFER` | `30` | ByteTrack lost-track buffer (frames before ID retirement) |
+| `MAX_UPLOAD_BYTES` | `524288000` | 500 MB upload cap |
 
 ---
 
@@ -103,188 +100,171 @@ If `pip install -r requirements.txt` fails with **“NumPy requires GCC >= 8.4�
 
 ```mermaid
 flowchart TD
-    User["Browser - React/Vite/Tailwind"]
-    API["FastAPI Backend - Python 3.11"]
-    BG["BackgroundTask + Thread Executor"]
-    CV["CV Pipeline - YOLOv8 + ByteTrack + Counter"]
-    Report["Reporter - pandas CSV + XLSX"]
-    Store["In-memory JobStore - dict + asyncio.Queue"]
+    Browser["Browser — React 18 / Vite / Tailwind"]
+    API["FastAPI — Python 3.11"]
+    BG["Background Thread Executor"]
+    CV["CV Pipeline\nYOLOv8n → ByteTrack → Counter"]
+    Store["In-memory JobStore\nper-job asyncio.Queue"]
+    Report["Reporter\npandas → CSV + XLSX"]
 
-    User -->|"POST /api/upload"| API
-    API -->|"201 Created job_id"| User
-    User -->|"WS /api/ws/{job_id}"| API
-    API -->|"schedule"| BG
+    Browser -->|"POST /api/upload (multipart)"| API
+    API -->|"job_id"| Browser
+    Browser -->|"WS /api/ws/{job_id}"| API
+    API -->|"run_in_executor"| BG
     BG --> CV
     CV --> Store
-    Store -->|"frame + progress"| API
-    API -->|"WS push"| User
+    Store -->|"progress + annotated frame"| API
+    API -->|"WebSocket push"| Browser
     CV --> Report
-    User -->|"GET /api/report/{id}/{kind}"| API
+    Browser -->|"GET /api/report/{id}/{kind}"| API
 ```
 
-### Why this shape
+### Design decisions
 
-- **Decoupled frontend / backend.** The React app communicates only over HTTP + WebSocket — easy to swap one for the other later (a desktop wrapper, a mobile client, etc.).
-- **No external broker.** A PoC does not need Celery + Redis. We use FastAPI `BackgroundTasks` and `asyncio.run_in_executor` to push CV work to a worker thread while keeping the event loop free for HTTP/WebSocket traffic.
-- **Job store with cached terminal events.** Each job has its own `asyncio.Queue`. On `complete`/`error` the message is also cached, so a client connecting *after* completion still receives the result on its first read.
-- **WebSocket-first with polling fallback.** The `useJobStream` hook tries WebSocket and falls back to polling `GET /api/job/{id}/status` if the upgrade fails.
+**Decoupled frontend / backend.** React talks only over HTTP and WebSocket. The FastAPI backend is a standalone Python service with its own process and thread pool.
 
-### Process flow
+**No external broker.** FastAPI `BackgroundTasks` + `asyncio.run_in_executor` push CV work to a worker thread while the event loop stays free for network I/O. Each job has its own `asyncio.Queue`; terminal events (`complete`, `error`) are cached so a late-connecting WebSocket client still receives them.
 
-1. **Upload** — `POST /api/upload` validates the MIME / magic bytes (`filetype` library) and a streaming size check (max 500 MB), saves the file to `backend/data/uploads/<uuid>.mp4`, and probes it with OpenCV to confirm it is decodable.
-2. **Job creation** — A `JobRecord` is registered in the in-memory `JobStore`. A background task is scheduled.
-3. **Processing** — `app.core.pipeline.run_pipeline` runs in a thread executor: decode → CLAHE → resize → YOLOv8 → ByteTrack → counter → annotate → JPEG-encode → publish to the job queue.
-4. **Live preview** — Every Nth processed frame (default 5) is JPEG-encoded (q=65), base64-wrapped, and streamed to the WebSocket client. Progress ticks are throttled to ~4 Hz.
-5. **Reporting** — On completion `app.services.reporter.generate_reports` writes `<job_id>.csv` and `<job_id>.xlsx` (Summary + Crossings + Detections sheets) under `backend/data/reports/`.
-6. **Cleanup** — A background task in the FastAPI lifespan deletes uploads and reports older than `FILE_RETENTION_HOURS` (default 24).
+**Thread safety.** The `JobStore` uses a `threading.RLock` for mutable state and a per-job cancel flag (`threading.Event`) that the worker polls every frame — allowing clean mid-run cancellation from the UI without killing the process.
+
+**WebSocket-first with polling fallback.** The `useJobStream` hook opens a WebSocket connection and automatically falls back to polling `GET /api/job/{id}/status` every 2 s if the upgrade fails (e.g. strict proxies), so the UI never shows a blank loading screen.
+
+### Processing flow
+
+1. **Upload & validate** — `POST /api/upload` reads the first 512 bytes to check magic bytes (`filetype` library), streams the body to disk with a size cap, then probes the file with OpenCV to confirm it is decodable before returning `job_id`.
+2. **CV pipeline** — `pipeline.py` iterates frames (CLAHE → resize to ≤640 px → YOLO inference → ByteTrack → counter → annotate → JPEG-encode), publishing progress and annotated frames to the job's queue.
+3. **Report generation** — on completion `reporter.py` writes the CSV and XLSX and stores the paths on the `JobRecord`.
+4. **Cleanup** — a lifespan background coroutine deletes uploads and reports older than 24 h.
 
 ---
 
-## Tracking & counting methodology
+## CV pipeline — detection & tracking
 
 ### Detection
 
-Ultralytics YOLOv8n filtered to the COCO vehicle classes:
+Model: **Ultralytics YOLOv8n** — COCO-pretrained, no fine-tuning required. Inference is restricted to four vehicle classes to skip irrelevant post-processing:
 
-| Class id | Class name |
-|----------|------------|
+| COCO id | Class |
+|---------|-------|
 | 2 | car |
 | 3 | motorcycle |
 | 5 | bus |
 | 7 | truck |
 
-Inference is restricted with `classes=[...]` to skip pedestrian / animal post-processing entirely. CUDA is auto-detected at startup.
+CUDA is auto-detected at startup (`YOLO_DEVICE=auto`). The model is loaded once as a process-wide singleton and protected by an `RLock` for thread-safe inference.
+
+**Pre-processing applied to every frame:**
+- **CLAHE** (Contrast Limited Adaptive Histogram Equalisation) in LAB colour space — mitigates sun glare and sudden illumination changes that can cause confidence drops.
+- **Aspect-preserving resize** to a maximum side of 640 px — halves compute with negligible accuracy loss for vehicle-scale objects.
+- **Frame skipping** (default `FRAME_SKIP=2`) — processes every other frame, halving work while keeping sufficient temporal resolution for line-crossing detection.
 
 ### Tracking
 
-`supervision.ByteTrack` wraps the ByteTrack algorithm. Configured with:
+`supervision.ByteTrack` wraps the ByteTrack algorithm, chosen for:
+- working from raw detection boxes only (no appearance embeddings required)
+- fast, low-memory operation
+- robust ID persistence through short occlusions
 
-- `track_activation_threshold = 0.25`
-- `lost_track_buffer = 30` (≈ 1 s @ 30 fps; survives short occlusions)
-- `minimum_matching_threshold = 0.8`
-- `minimum_consecutive_frames = 1` (so we never lose the first observation)
+Key parameters:
 
-The tracker is constructed *per job* with `frame_rate` set to the source video's actual FPS, which makes the buffer behave consistently across clips of different framerates.
+| Parameter | Value | Effect |
+|-----------|-------|--------|
+| `track_activation_threshold` | 0.25 | Lower than the detection threshold to re-attach tentative tracks |
+| `lost_track_buffer` | 30 frames | Keeps an ID alive for ~1 s @ 30 fps through occlusions |
+| `minimum_matching_threshold` | 0.8 | Strict IoU matching to prevent ID confusion on dense traffic |
+| `minimum_consecutive_frames` | 1 | Track appears on its first detection — no warm-up lag |
 
-### Counting (preventing double counts)
+The tracker is instantiated **per job** with `frame_rate` set from the source video's actual FPS, so the buffer window is consistent regardless of whether the clip is 24 or 60 fps.
 
-A horizontal **virtual line** is placed at `0.5 × frame_height`. Each track maintains a small state machine:
+---
+
+## Counting logic — preventing double-counting
+
+A **horizontal virtual line** is drawn at 50% of the frame height. A top-down drone shot means every vehicle that enters the far lane must cross this line exactly once, making it a reliable counting trigger.
+
+### Per-track state machine
 
 ```
-{
-  side:     -1 above the line, +1 below, 0 unknown,
-  crossed:  bool — latched to True on first transition,
-  first_seen, last_seen,
+state = {
+    side:    -1  (centroid above line)
+              +1  (centroid below line)
+               0  (unknown — first observation)
+    crossed: False  →  True (latched on first crossing, never reset)
+    first_seen, last_seen: frame indices
 }
 ```
 
-Behaviour:
+A vehicle is counted the **first time its centroid crosses from one side to the other**. The boolean latch is never reset while the track is alive.
 
-- **First crossing** — `side` flips → counter increments → `crossed = True`.
-- **Subsequent oscillations** — `crossed` is latched, no further increments even if the track wobbles back and forth on the line.
-- **Stop-and-go traffic** — `side` does not change, so no extra increments.
-- **Brief occlusion (lamppost, bridge)** — ByteTrack preserves the same `track_id` for up to `track_buffer` frames; the latched state is reused → no double count.
-- **Long-term loss** — a brand-new `track_id` is issued, which is the only condition where double-counting could occur. The trade-off knob is `TRACK_BUFFER` (env var); larger values reduce double-counting but also retain ghosts longer.
+### How each edge case is handled
 
-The `crossings` log records the exact `(track_id, class_name, frame_idx, timestamp)` of every counted crossing — the report's most useful audit trail.
+| Scenario | What happens |
+|----------|-------------|
+| **Vehicle stops on the line** | Centroid stays on the same side — `side` does not change — no increment. |
+| **Stop-and-go traffic** | Same as above; a vehicle that decelerates before crossing simply hasn't crossed yet. |
+| **Brief occlusion (lamppost, bridge)** | ByteTrack's `lost_track_buffer=30` keeps the same `track_id` alive for up to 1 s. The existing `crossed` latch is reused when the vehicle reappears — no double count. |
+| **Oscillation after crossing** | `crossed` is latched `True`; no further increments regardless of how many times the centroid crosses the line. |
+| **Long-term occlusion (track expires)** | ByteTrack issues a new `track_id`. The vehicle is counted again when it crosses. This is the only unavoidable double-count scenario; its frequency is controlled by `TRACK_BUFFER` — a larger buffer reduces it at the cost of keeping ghost tracks longer. This trade-off is documented as assumption A7. |
+| **Vehicle enters from opposite direction** | Counted on its own crossing — correctly treated as a new event. |
+| **Zero vehicles detected** | Job completes normally; `total_vehicles = 0` is surfaced in the UI (not an error state). |
 
-### Pre-processing
+### Annotated live preview
 
-- **Resize.** Frames are downscaled so the longest side ≤ 640 px (preserving aspect). Reduces inference time without measurable accuracy loss for vehicles, which dominate the frame.
-- **Frame skipping.** `FRAME_SKIP=2` (default) processes every other frame. Halves compute while keeping enough temporal resolution for crossing detection. Configurable via env var.
-- **CLAHE.** Per-frame contrast equalisation in LAB space mitigates sun glare and illumination jumps that can otherwise cause confidence drops.
+The pipeline draws directly on the resized frame in OpenCV before JPEG-encoding:
+- Colour-coded bounding box per class (car = blue, truck = red, bus = purple, motorcycle = green)
+- Label: `#<track_id> <class> <confidence>`
+- Yellow counting line
+- HUD overlay: live per-class counts
+
+Every 5th processed frame (configurable `FRAME_STREAM_EVERY`) is sent over WebSocket and rendered on a `<canvas>` element at the browser for smooth playback.
 
 ---
 
 ## Edge-case handling
 
-| Situation | How it is handled |
-|-----------|-------------------|
-| Non-video upload (e.g. PDF renamed `.mp4`) | `filetype` magic-byte check rejects with HTTP 422 |
-| Oversized upload (> 500 MB) | Streaming size check aborts with HTTP 413 and deletes the partial file |
-| Corrupt or zero-length video | OpenCV `probe_video` rejects with HTTP 422 before queuing the job |
-| Zero vehicles in scene | Job completes normally with `total_vehicles = 0` (a valid result, not an error) |
-| Vehicle stops on the line | Side does not change — no extra increment |
-| Vehicle passes behind occlusion | ByteTrack `lost_track_buffer = 30` keeps the ID alive |
-| Vehicle exits then re-enters from the opposite side | New track id is issued — counted again only after a fresh crossing |
-| Sun glare / sudden brightness | CLAHE pre-processing stabilises detector confidence |
-| User cancels mid-run | `DELETE /api/job/{id}` flips a thread-safe flag the worker checks per frame |
-| WebSocket fails (proxy strips upgrade) | `useJobStream` automatically polls `GET /api/job/{id}/status` every 2 s |
-| Late client connection | `JobStore` caches the terminal event, so a late subscriber still receives it |
-| CPU-only host | Pipeline transparently falls back to CPU; lower the model size / raise `FRAME_SKIP` for acceptable runtime |
+| Situation | Backend | Frontend |
+|-----------|---------|----------|
+| Non-video file uploaded | `filetype` magic-byte check → HTTP 422 | Toast error message |
+| Video file > 500 MB | Streaming size cap → HTTP 413, partial file deleted | Toast error message |
+| Corrupt / undecodable video | OpenCV probe → HTTP 422 before job is queued | Toast error message |
+| User cancels mid-run | `DELETE /api/job/{id}` sets `cancel_flag` (`threading.Event`); worker checks it every frame | Cancel button in Processing view |
+| WebSocket fails / proxy blocks upgrade | n/a | `useJobStream` falls back to 2 s polling automatically |
+| Late browser reconnect | Terminal event cached in `JobStore._terminal_events` | Client receives `complete` / `error` immediately on subscribe |
+| CPU-only machine | `YOLO_DEVICE=auto` resolves to CPU; FRAME_SKIP reduces load | n/a |
 
 ---
 
-## API reference
+## Report structure
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/health` | Liveness probe |
-| POST | `/api/upload` | `multipart/form-data` with field `file`. Returns `{ job_id, filename, size_bytes }` |
-| GET | `/api/job/{id}/status` | `{ job_id, status, pct, message }` — `status ∈ {pending, processing, completed, failed, cancelled}` |
-| GET | `/api/job/{id}/result` | Full summary + report URLs (HTTP 409 if not yet complete) |
-| DELETE | `/api/job/{id}` | Cancel an in-flight job and delete its source video |
-| GET | `/api/report/{id}/csv` | Per-frame detections as CSV |
-| GET | `/api/report/{id}/xlsx` | Multi-sheet workbook (Summary, Crossings, Detections) |
-| WS | `/api/ws/{id}` | Live progress + annotated-frame stream |
+Both files are generated automatically on job completion and available via the download buttons.
 
-Full interactive docs: <http://localhost:8000/docs>.
+### CSV (`<job_id>.csv`) — per-frame detections
 
----
+| Column | Description |
+|--------|-------------|
+| `frame` | Original frame index in the source video |
+| `timestamp` | Seconds from video start |
+| `track_id` | ByteTrack-assigned stable vehicle ID |
+| `class` | `car` / `truck` / `bus` / `motorcycle` |
+| `confidence` | YOLO detection confidence |
+| `bbox_x1/y1/x2/y2` | Bounding box in resized-frame coordinates |
+| `counted_this_frame` | `True` if this was the crossing frame for this track |
 
-## WebSocket protocol
+### Excel (`<job_id>.xlsx`) — three sheets
 
-```jsonc
-// progress tick (~4 Hz)
-{ "type": "progress", "pct": 42.5, "processed": 200, "total": 470 }
+| Sheet | Contents |
+|-------|----------|
+| **Summary** | Total vehicle count, per-class breakdown, processing duration, video FPS / duration / frame count |
+| **Crossings** | One row per counted vehicle: `track_id`, `class_name`, `frame_idx`, `timestamp` |
+| **Detections** | Full per-frame log (same as the CSV) |
 
-// annotated frame (every Nth processed frame, base64 JPEG)
-{ "type": "frame", "frame_idx": 314, "data": "<base64 JPEG q=65>" }
-
-// terminal events
-{ "type": "complete",
-  "summary": { "total_vehicles": 27, "by_type": {...}, "processing_seconds": 42.1, ... },
-  "report_csv_url": "/api/report/<id>/csv",
-  "report_xlsx_url": "/api/report/<id>/xlsx" }
-
-{ "type": "error", "message": "Unable to decode frame 122" }
-```
-
-The server emits a heartbeat `progress` event every 30 s while a job is in flight to prevent idle-disconnect from upstream proxies.
-
----
-
-## Configuration
-
-All backend settings live in `backend/.env` (see `.env.example`):
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `HOST` / `PORT` | `0.0.0.0` / `8000` | uvicorn bind |
-| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Comma-separated CORS allowlist |
-| `DATA_DIR` / `UPLOAD_DIR` / `REPORT_DIR` | `./data...` | On-disk storage roots |
-| `MAX_UPLOAD_BYTES` | `524288000` (500 MB) | Streaming upload cap |
-| `YOLO_MODEL` | `yolov8n.pt` | Any Ultralytics weight name |
-| `YOLO_DEVICE` | `auto` | `auto` / `cpu` / `cuda` / `cuda:0` — GPU only if PyTorch+CUDA is installed |
-| `YOLO_HALF` | `false` | `true` = FP16 on CUDA (faster on RTX) |
-| `FRAME_SKIP` | `2` | Process every Nth original frame |
-| `RESIZE_MAX` | `640` | Longest-side resize before inference |
-| `CONF_THRESHOLD` | `0.35` | Detector confidence cut-off |
-| `TRACK_BUFFER` | `30` | ByteTrack lost-track buffer (frames) |
-| `FRAME_STREAM_EVERY` | `5` | Send 1 of every N processed frames over WS |
-| `FILE_RETENTION_HOURS` | `24` | Auto-cleanup window |
-
-Frontend (`frontend/.env`):
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `VITE_API_URL` | _(empty — same origin)_ | Override backend base URL when frontend & backend are deployed separately |
+The **Crossings** sheet is the most useful for auditors — it is the exact set of events that incremented the counter.
 
 ---
 
 ## Testing
 
-### Backend
+### Backend unit tests
 
 ```bash
 cd backend
@@ -292,8 +272,14 @@ pip install -r requirements.txt -r tests/requirements.txt
 pytest -v
 ```
 
-- **Unit** — `tests/unit/test_counter.py` (counting state machine: stop-and-go, occlusion, double-count prevention, multi-vehicle), `tests/unit/test_reporter.py` (CSV/XLSX schema + sheet structure)
-- **Integration** — `tests/integration/test_upload_api.py` (end-to-end against a `TestClient`; the YOLO pipeline is stubbed so CI does not need GPUs / weights)
+| Test file | What it covers |
+|-----------|---------------|
+| `tests/unit/test_counter.py` | 8 cases: single crossing, oscillation after crossing, stop-in-place (no crossing), multi-vehicle independence, occlusion persistence via same ID, long-loss new-ID behaviour, crossings log metadata, unique track ID tracking |
+| `tests/unit/test_reporter.py` | CSV column schema, 3-sheet XLSX structure, empty-input edge case |
+| `tests/unit/test_device.py` | Device resolution: CPU explicit, CUDA auto-detect, CUDA fallback to CPU when unavailable |
+| `tests/integration/test_upload_api.py` | HTTP contract: upload → job_id, invalid file → 422, status endpoint, 409 before complete, 404 for missing report, cancel |
+
+The integration tests stub the YOLO pipeline so they run on any machine without GPU or weights.
 
 ### Frontend
 
@@ -301,12 +287,12 @@ pytest -v
 cd frontend
 npm install
 npm run lint
-npm run build
+npm run build   # tsc -b && vite build
 ```
 
-### Continuous integration
+### CI
 
-`.github/workflows/ci.yml` runs ruff + pytest for the backend and ESLint + `vite build` for the frontend on every push and pull request.
+`.github/workflows/ci.yml` runs on every push: **ruff** lint + **pytest** for the backend, **ESLint** + **vite build** for the frontend.
 
 ---
 
@@ -314,55 +300,73 @@ npm run build
 
 | # | Assumption | Rationale |
 |---|------------|-----------|
-| A1 | Drone is roughly top-down and the camera is reasonably stable. | A horizontal counting line at 50% frame height is a sound first-cut without requiring homography. |
-| A2 | Only COCO vehicle classes (car, truck, bus, motorcycle) are needed. | YOLOv8 is already trained on these — no fine-tuning required for the brief. |
-| A3 | Processing is offline (upload → process → report). | The brief explicitly describes this flow. The architecture would still admit a `live=True` streaming worker. |
-| A4 | A single backend instance is sufficient for the PoC. | An in-memory `JobStore` is the simplest correct choice. The architecture is structured so swapping in Redis + Celery later is mechanical. |
-| A5 | Files do not need to be retained beyond 24 hours. | A periodic cleanup task removes stale uploads and reports — keeps disk usage bounded and minimises privacy exposure. |
-| A6 | `FRAME_SKIP=2` is an acceptable default. | Halves processing time, with negligible impact on the line-crossing metric for typical traffic speeds. Tunable per deployment. |
-| A7 | Track double-counting is bounded by `TRACK_BUFFER`. | When `TRACK_BUFFER` is exceeded the same vehicle gets a new id; this is documented and tested explicitly. |
+| A1 | Drone footage is roughly top-down and the camera is reasonably stable (no extreme tilt). | A horizontal counting line at 50% frame height is a valid trigger without needing homography or camera calibration. |
+| A2 | Only COCO vehicle classes are needed (car, truck, bus, motorcycle). | YOLOv8 is already trained on these — no custom fine-tuning required. |
+| A3 | Processing is offline: user uploads a clip; the system processes it and returns results. | The assessment describes exactly this flow. A live-stream worker could be added later by replacing `iter_frames` with a live capture loop. |
+| A4 | A single server instance with in-memory job state is sufficient for the PoC. | Eliminates Redis + Celery complexity. The `JobStore` interface is intentionally narrow so a backend swap is mechanical. |
+| A5 | Uploads and reports do not need to persist beyond 24 hours. | A lifespan background task prunes stale files, keeping disk usage bounded. |
+| A6 | `FRAME_SKIP=2` is an acceptable default speed–accuracy trade-off. | Halves processing time; at typical drone altitudes and traffic speeds, no vehicle crosses the counting line entirely within a single skipped frame. Tunable via env var. |
+| A7 | Track double-counting on long-term occlusion is bounded by `TRACK_BUFFER`. | When a track ID is retired and the same physical vehicle re-enters detection, it receives a new ID and is counted again. This is unavoidable without appearance re-ID. The buffer of 30 frames (~1 s) handles the vast majority of real-world occlusions (lampposts, road markings, brief tree cover). |
 
 ---
 
 ## Project layout
 
 ```
-.
+smart-drone-analyzer/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
-│   │   │   ├── routes/    # upload.py, jobs.py, reports.py
-│   │   │   └── websocket.py
-│   │   ├── core/          # detector.py, tracker.py, counter.py, pipeline.py
-│   │   ├── services/      # job_store.py, reporter.py
-│   │   ├── utils/         # video.py, file_validation.py, file_cleanup.py
-│   │   ├── config.py
-│   │   ├── schemas.py
-│   │   └── main.py
+│   │   │   ├── routes/
+│   │   │   │   ├── upload.py        # POST /api/upload — validate, save, schedule job
+│   │   │   │   ├── jobs.py          # GET status, GET result, DELETE cancel
+│   │   │   │   └── reports.py       # GET file download (CSV / XLSX)
+│   │   │   └── websocket.py         # WS /api/ws/{job_id} — stream progress + frames
+│   │   ├── core/
+│   │   │   ├── detector.py          # YOLOv8 singleton wrapper, CUDA auto-detect
+│   │   │   ├── tracker.py           # supervision.ByteTrack wrapper → Track objects
+│   │   │   ├── counter.py           # Virtual-line state machine (double-count prevention)
+│   │   │   ├── device.py            # torch device resolution (auto / cuda / cpu)
+│   │   │   └── pipeline.py          # Full frame loop: decode → detect → track → count → annotate
+│   │   ├── services/
+│   │   │   ├── job_store.py         # Thread-safe in-memory job registry + per-job asyncio.Queue
+│   │   │   └── reporter.py          # pandas → CSV + 3-sheet XLSX
+│   │   ├── utils/
+│   │   │   ├── video.py             # Frame iterator, resize, CLAHE, video probe
+│   │   │   ├── file_validation.py   # Magic-byte MIME check
+│   │   │   └── file_cleanup.py      # 24-hour retention coroutine
+│   │   ├── config.py                # pydantic-settings configuration
+│   │   ├── schemas.py               # Pydantic models for REST + WebSocket payloads
+│   │   └── main.py                  # FastAPI app factory, CORS, lifespan
 │   ├── tests/
-│   │   ├── unit/          # test_counter.py, test_reporter.py
-│   │   └── integration/   # test_upload_api.py
-│   ├── Dockerfile
-│   ├── pyproject.toml
+│   │   ├── unit/                    # test_counter.py, test_reporter.py, test_device.py
+│   │   └── integration/             # test_upload_api.py (TestClient, pipeline stubbed)
 │   ├── requirements.txt
+│   ├── pyproject.toml               # ruff + pytest config
+│   ├── Dockerfile
 │   └── .env.example
 ├── frontend/
 │   ├── src/
-│   │   ├── components/    # UploadZone, ProcessingView, SummaryPanel, ReportDownload, ToastStack
-│   │   ├── hooks/         # useUpload, useJobStream, useToasts
-│   │   ├── services/      # api.ts (typed REST + WS helpers)
-│   │   ├── types/
-│   │   ├── App.tsx
-│   │   ├── index.css
+│   │   ├── components/
+│   │   │   ├── UploadZone.tsx       # Drag-and-drop, client-side validation, upload progress
+│   │   │   ├── ProcessingView.tsx   # Live canvas, ring progress, cancel button
+│   │   │   ├── SummaryPanel.tsx     # Stat cards + Recharts bar chart
+│   │   │   ├── ReportDownload.tsx   # CSV + XLSX download buttons
+│   │   │   └── ToastProvider.tsx    # Context-based toast notifications
+│   │   ├── hooks/
+│   │   │   ├── useUpload.ts         # XHR upload with progress + abort
+│   │   │   └── useJobStream.ts      # WebSocket → polling fallback
+│   │   ├── services/api.ts          # Typed fetch + WS URL helpers
+│   │   ├── types/index.ts           # Shared TypeScript types
+│   │   ├── App.tsx                  # Phase state machine (upload → processing → results → error)
 │   │   └── main.tsx
-│   ├── Dockerfile
-│   ├── nginx.conf
 │   ├── package.json
+│   ├── vite.config.ts               # Dev proxy for /api/* → backend
 │   ├── tailwind.config.ts
-│   ├── vite.config.ts
 │   └── tsconfig.json
 ├── docker-compose.yml
 ├── .github/workflows/ci.yml
+├── LICENSE
 └── README.md
 ```
 
