@@ -42,7 +42,9 @@ const KIND_STYLES: Record<ToastKind, string> = {
 export function ToastProvider({ children }: PropsWithChildren) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const idRef = useRef(0);
-  const timeoutsRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  // Use `window.setTimeout` so the handle is a DOM `number`, not NodeJS.Timeout (avoids
+  // clashes when @types/node is installed for vite.config.ts).
+  const timeoutsRef = useRef<Map<number, ReturnType<typeof window.setTimeout>>>(new Map());
 
   const dismiss = useCallback((id: number) => {
     const handle = timeoutsRef.current.get(id);

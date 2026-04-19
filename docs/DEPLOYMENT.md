@@ -200,6 +200,7 @@ Exact keys depend on Docker Compose v2 vs Swarm; see [NVIDIA GPU in Compose](htt
 - **Single VM**: Docker Compose as above.
 - **Split**: Static site on **S3 + CloudFront**; API on **ECS / Cloud Run / VM** (WebSockets need sticky routing or dedicated URL).
 - **GPU cloud**: AWS **g4dn** / Azure **NC** series + same Docker GPU steps.
+- **Render (managed Web Service)**: step-by-step for this repo’s FastAPI backend → **[DEPLOY-RENDER.md](DEPLOY-RENDER.md)** (CPU-only on standard plans; use `render.yaml` + `backend/scripts/render_build.sh`).
 
 ---
 

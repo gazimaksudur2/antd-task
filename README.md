@@ -85,6 +85,7 @@ Open <http://localhost:5173>. The Vite dev server proxies `/api/*` and `/api/ws/
 
 - **Using an RTX 4060 Ti (or any CUDA GPU) in development:** the pipeline uses the GPU when `YOLO_DEVICE=auto` (default) **and** PyTorch was installed **with CUDA** (`torch.cuda.is_available()` must be `True`). The stock `pip install -r requirements.txt` often installs a **CPU-only** Torch build — see **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for the exact PyTorch install command and verification one-liner. Set `YOLO_HALF=true` in `backend/.env` for faster FP16 inference on RTX.
 - **Deploying the full stack:** step-by-step options (Docker Compose, bare metal, HTTPS/WebSockets, optional GPU in Docker) are in **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+- **Deploying the backend on Render:** **[docs/DEPLOY-RENDER.md](docs/DEPLOY-RENDER.md)** (Blueprint `render.yaml` + `backend/scripts/render_build.sh`).
 
 ### First-run notes
 
