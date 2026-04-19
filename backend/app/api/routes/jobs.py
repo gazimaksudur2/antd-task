@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.schemas import (
     JobResultResponse,
@@ -68,16 +68,18 @@ def get_job_result(
 @router.delete(
     "/{job_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
     summary="Cancel an in-flight job and clean up its artifacts",
 )
 def cancel_job(
     job_id: str,
     store: JobStore = Depends(get_job_store),
-) -> None:
+) -> Response:
     record = store.get(job_id)
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found")
     store.cancel(job_id)
     if record.upload_path.exists():
         record.upload_path.unlink(missing_ok=True)
-    return None
+    # 204 must have no body — return a bare Starlette Response, not JSON `null`.
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
