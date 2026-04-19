@@ -47,9 +47,3 @@ export type WSMessage =
   | { type: "error"; message: string };
 
 export type AppPhase = "upload" | "processing" | "results" | "error";
-
-export interface ToastMessage {
-  id: number;
-  kind: "info" | "success" | "error";
-  text: string;
-}

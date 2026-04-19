@@ -86,6 +86,10 @@ Open <http://localhost:5173>. The Vite dev server proxies `/api/*` and `/api/ws/
 - Set `YOLO_MODEL=yolov8s.pt` in `backend/.env` to trade speed for accuracy. Any Ultralytics weight name works.
 - Drop a sample drone clip into the UI to verify everything is wired correctly.
 
+### Troubleshooting: NumPy build error on Windows + Python 3.13
+
+If `pip install -r requirements.txt` fails with **“NumPy requires GCC >= 8.4”**, pip was trying to **compile NumPy 1.26** from source (no Windows wheel for Python 3.13). Older `ultralytics==8.3.0` also pulled `numpy<2`, which triggered that backtrack. This repo pins **`numpy>=2.1.0`** and **`ultralytics>=8.3.128`** so the resolver stays on **binary wheels only**. Upgrade your checkout and run `pip install -U pip` then `pip install -r requirements.txt` again.
+
 ---
 
 ## Architecture

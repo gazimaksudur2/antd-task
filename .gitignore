@@ -31,3 +31,7 @@ backend/yolov8*.pt
 # Demo / scratch
 scratch/
 demo_outputs/
+
+
+AssessmentDetails.md
+primary-observation.md

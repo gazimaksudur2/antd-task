@@ -3,9 +3,8 @@ import { useCallback, useState } from "react";
 import { ProcessingView } from "./components/ProcessingView";
 import { ReportDownload } from "./components/ReportDownload";
 import { SummaryPanel } from "./components/SummaryPanel";
-import { ToastStack } from "./components/ToastStack";
+import { useToast } from "./components/ToastProvider";
 import { UploadZone } from "./components/UploadZone";
-import { useToasts } from "./hooks/useToasts";
 import type { AppPhase, JobSummary } from "./types";
 
 interface CompletedJob {
@@ -26,7 +25,7 @@ export default function App() {
   const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);
   const [completed, setCompleted] = useState<CompletedJob | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const { toasts, push, dismiss } = useToasts();
+  const { push } = useToast();
 
   const handleUploadStarted = useCallback(
     (jobId: string, filename: string) => {
@@ -107,7 +106,6 @@ export default function App() {
         )}
       </main>
 
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }

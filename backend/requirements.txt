@@ -10,13 +10,16 @@ pydantic-settings==2.5.2
 filetype==1.2.0
 
 # --- Computer vision ---
-ultralytics==8.3.0
-opencv-python-headless==4.10.0.84
+# Python 3.13: NumPy 1.26 has no Windows wheel → pip builds from source (needs GCC ≥ 8.4).
+# ultralytics 8.3.0 declares numpy<2, which forces that backtrack. Pin NumPy 2.x and use
+# a newer ultralytics that supports it (wheels only, no local compiler).
+numpy>=2.1.0,<3
+ultralytics>=8.3.128,<9
+opencv-python-headless>=4.10.0.84,<5
 supervision==0.23.0
-numpy==1.26.4
 
 # --- Reporting ---
-pandas==2.2.3
+pandas>=2.2.3,<3
 openpyxl==3.1.5
 
 # --- Logging ---
