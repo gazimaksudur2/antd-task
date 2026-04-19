@@ -372,6 +372,22 @@ smart-drone-analyzer/
 
 ---
 
+**FAQs**
+
+1. **Why YOLOv8 and not YOLOv10?**
+   YOLOv8 is mature, well-benchmarked on COCO, has first-class Python API support, and is already trained on the four vehicle classes we need. YOLOv10 would also work — it's a config swap.
+
+2. **Why not DeepSORT instead of ByteTrack?**
+   DeepSORT requires an appearance-embedding model (extra inference pass). ByteTrack works on bounding boxes alone, is significantly faster, and is more than sufficient for top-down drone footage where vehicles are spatially well-separated.
+
+3. **What happens if the drone camera tilts?**
+   The horizontal counting line assumes a roughly vertical viewpoint — documented as assumption A1. For angled cameras, the line would need to be replaced with a perspective-corrected polygon zone. That's a one-function change in `counter.py`.
+
+4. **How does cancellation work?**
+   The frontend sends `DELETE /api/job/{id}`. The backend sets a `threading.Event` flag on the job record. The pipeline checks it every frame inside the loop and exits cleanly.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
