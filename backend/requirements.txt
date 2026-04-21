@@ -18,6 +18,10 @@ filetype==1.2.0
 # a newer ultralytics that supports it (wheels only, no local compiler).
 numpy>=2.1.0,<3
 ultralytics>=8.3.128,<9
+# Torch 2.11.0 currently crashes on Python 3.13 at import-time (RNN overload parsing);
+# keep a stable pair until upstream fix is validated in this project.
+torch>=2.10.0,<2.11.0
+torchvision>=0.25.0,<0.26.0
 opencv-python-headless>=4.10.0.84,<5
 supervision==0.23.0
 
